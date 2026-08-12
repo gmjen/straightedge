@@ -1,0 +1,4 @@
+flowchart LR
+    ingest["Ingest"] --> enrich["Enrich"]
+    enrich --> model["Model"]
+    model --> db[("Database")]

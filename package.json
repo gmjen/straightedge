@@ -1,0 +1,45 @@
+{
+  "name": "straightedge",
+  "version": "0.2.0",
+  "description": "Tell your agent how the diagram should look. Layout control for Mermaid.",
+  "license": "Apache-2.0",
+  "type": "module",
+  "bin": {
+    "straightedge": "./dist/cli.js"
+  },
+  "exports": {
+    ".": "./dist/index.js"
+  },
+  "files": [
+    "dist",
+    "SPEC.md"
+  ],
+  "engines": {
+    "node": ">=22"
+  },
+  "scripts": {
+    "build": "tsc",
+    "test": "tsx --test test/*.test.ts",
+    "test:coverage": "node --import tsx --test --experimental-test-coverage test/*.test.ts",
+    "test:e2e": "npm run build && node --test test/e2e/*.test.mjs",
+    "test:all": "npm run check && npm test && npm run test:e2e",
+    "check": "tsc --noEmit"
+  },
+  "dependencies": {
+    "@modelcontextprotocol/sdk": "^1.0.0",
+    "commander": "^12.0.0",
+    "elkjs": "0.9.3",
+    "mermaid": "11.4.1",
+    "puppeteer": "^23.0.0",
+    "zod": "^3.23.0"
+  },
+  "devDependencies": {
+    "@types/node": "^22.0.0",
+    "tsx": "^4.19.0",
+    "typescript": "^5.6.0"
+  },
+  "comments": {
+    "pinned": "mermaid and elkjs are pinned exactly on purpose. The layout-loader API is public but young and LayoutData is semi-internal; treat an upgrade as a deliberate task, not a dependabot merge.",
+    "deps": "Six runtime dependencies. If this list grows, ask why."
+  }
+}

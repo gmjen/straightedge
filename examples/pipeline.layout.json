@@ -1,0 +1,14 @@
+{
+  "version": 1,
+  "ops": [
+    { "op": "place_relative", "node": "db", "reference": "model", "side": "below", "gap": 80 },
+    { "op": "equalize_size", "nodes": ["ingest", "enrich", "model"], "dimension": "width" },
+    {
+      "op": "distribute_nodes",
+      "nodes": ["ingest", "enrich", "model"],
+      "axis": "horizontal",
+      "gap": 64
+    },
+    { "op": "move_node", "node": "db", "dx": 24, "dy": 0 }
+  ]
+}
