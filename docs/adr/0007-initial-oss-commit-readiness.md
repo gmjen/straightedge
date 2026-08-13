@@ -452,9 +452,8 @@ dist contents were built from the tagged source.
 
 The initial commit includes:
 
-- the unmodified Apache License 2.0 text in root `LICENSE`;
-- a copyright holder/year decision recorded in `NOTICE` only if project or dependency attribution
-  requires it;
+- the unmodified BSD 3-Clause License text and copyright notice in root `LICENSE`;
+- a separate `NOTICE` only if dependency attribution requires it;
 - `CONTRIBUTING.md` with setup, test, ADR, fixture, and pull-request expectations;
 - `CODE_OF_CONDUCT.md` using a named, versioned Contributor Covenant;
 - `SECURITY.md` with supported versions, a private reporting channel, expected response window, and

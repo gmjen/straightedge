@@ -42,4 +42,4 @@ replay, unequal node sizes, stale IDs, and browser paint when the DOM is involve
 - Confirm `git status --ignored` contains no accidental source, credentials, backups, or outputs.
 - Update README, CHANGELOG, SPEC, and ADRs when their public contract changes.
 
-Contributions are accepted under the repository's [Apache License 2.0](./LICENSE).
+Contributions are accepted under the repository's [BSD 3-Clause License](./LICENSE).
