@@ -257,7 +257,7 @@ npm run test:package  # pack, clean install, CLI/API/types consumer smoke
 npm run test:all      # complete local release gate
 ```
 
-Straightedge has no telemetry and sends no diagram to a Straightedge service. The editor is not
+Straightedge has no telemetry and sends no diagram or other data to a any service. The editor is not
 safe to expose remotely. Mermaid uses strict security mode with HTML labels disabled; callers
 should still avoid untrusted source. See [SECURITY.md](./SECURITY.md) for the private reporting
 channel and [CONTRIBUTING.md](./CONTRIBUTING.md) for fixture and pull-request guidance.
