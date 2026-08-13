@@ -1,123 +1,174 @@
 # Straightedge
 
-**Tell your agent how the diagram should look.**
+**Tell your agent how the diagram should look.** Straightedge gives an AI agent deterministic,
+editable layout controls for Mermaid while keeping the Mermaid source ordinary and portable.
 
-<!-- TODO: before/after GIF goes here, above everything else.
-     A README arguing for visual quality with no pictures in it is self-defeating.
-     Ugly agent-generated architecture diagram → "make it presentation ready" → clean 16:9. -->
+| Mermaid baseline | After ordered layout, theme, and README frame |
+|---|---|
+| ![Baseline Mermaid pipeline with four nodes in one default left-to-right line](./docs/assets/pipeline-before.png) | ![Straightedge pipeline with three ordered processing nodes, the database below Model, and a wide presentation frame](./docs/assets/pipeline-after.png) |
 
-```
-"Put the database below the workers."
+The committed “after” example completed the `presentation` profile with no blocking problems. That
+is a scoped check result—not a claim that software can certify subjective design quality. Regenerate
+both images and the copied sidecar with `npm run docs:assets`; the exact source is
+[examples/pipeline.mmd](./examples/pipeline.mmd) and its operations are in
+[examples/pipeline.layout.json](./examples/pipeline.layout.json).
 
-"Align those three services."
+> “Align box A and box B.”
+>
+> “Add more space between Charlie and Foxtrot.”
+>
+> “Put Ingest, Enrich, Model, and Database in that order.”
+>
+> “Make circle Y about 10% smaller.”
 
-"Make these boxes the same width."
+Straightedge records those instructions next to the source:
 
-"Make circle Y about 10% smaller."
-
-"Fit this to a 16:9 slide."
-
-"Nudge that one right a bit."
-```
-
-Straightedge is an open-source Mermaid layout plugin and MCP server that gives agents structured
-control over node position, size, alignment, spacing, and style. Your `.mmd` file stays ordinary
-Mermaid; what you said about the layout is recorded next to it as a small, readable list of
-operations.
-
-```
-pipeline.mmd            ← Mermaid. Yours. We only read it.
-pipeline.layout.json    ← what you asked for. Safe to delete.
-```
-
-Delete the layout file and you have a plain Mermaid diagram with default layout. Nothing is lost
-that you didn't explicitly ask for.
-
-## Why not just store the coordinates?
-
-Because they stop meaning anything the moment the diagram changes. Add one node, ELK re-lays-out,
-and your saved positions describe a layout nobody has ever seen.
-
-Straightedge stores the *instructions* instead:
-
-```json
-{
-  "version": 1,
-  "ops": [
-    { "op": "equalize_size", "nodes": ["ingest", "enrich", "model"], "dimension": "width" },
-    { "op": "distribute_nodes", "nodes": ["ingest", "enrich", "model"], "axis": "horizontal", "gap": 64 },
-    { "op": "place_relative", "node": "db", "reference": "model", "side": "below", "gap": 80 }
-  ]
-}
+```text
+pipeline.mmd            Mermaid source; Straightedge reads it
+pipeline.layout.json    ordered visual intent; safe to remove or reset
+pipeline.png            generated render; ignored by Git in examples
 ```
 
-Replay those against a fresh layout and "align these three" is still an alignment. No constraint
-solver, no DSL to learn, and a diff you can read in a pull request.
+Coordinates are deliberately not stored. On every render, Straightedge obtains a fresh ELK
+baseline, replays semantic operations such as `row_nodes`, `align_nodes`, and `resize_node`, paints
+the result in Chromium, and checks the resulting DOM geometry. Stable Mermaid node IDs preserve
+intent as labels and structure evolve.
 
-## Status
+## Project status
 
-**v0.2 implements the trust-first conversational loop.** Straightedge now measures final DOM text,
-rejects publication-blocking edits before they reach the sidecar, returns structured problems and
-safe repair operations, and shares one atomic transaction engine across its CLI, MCP server, and
-local editor.
+`0.2.0-alpha.1` is the initial OSS preview. Its supported scope is Mermaid flowcharts without
+subgraphs. Other Mermaid diagram families, org-chart routing, semantic tree layout, multi-user
+editing, and remote editor hosting are not supported yet. See [SPEC.md](./SPEC.md),
+[ADR-0001](./docs/adr/0001-trust-first-evolution.md), and the implemented initial-release plan in
+[ADR-0007](./docs/adr/0007-initial-oss-commit-readiness.md).
 
-It also includes:
+Requirements:
 
-- shape-aware, center-preserving resizing with unscaled labels;
-- exact slide, A4, and README presentation frames with minimum-font checks;
-- three curated themes and semantic node roles;
-- obstacle-aware rerouting for touched or explicitly selected edges;
-- atomic v1/v2 sidecars with concurrent-write protection;
-- actionable Chromium diagnostics through `straightedge doctor`; and
-- one reusable browser session per MCP server or editor session.
+- Node.js 22.12 or newer;
+- a Chromium browser usable by Puppeteer (`straightedge doctor --json` reports the resolved one);
+- macOS or Linux for the current local/CI evidence. CI runs Ubuntu with Node 22.
 
-Flowcharts without subgraphs remain the intentionally narrow supported scope. The historical v0.1
-constraints are documented in [SPEC.md](./SPEC.md), and the governing architectural decisions and
-remaining breadth gates are in [ADR-0001](./docs/adr/0001-trust-first-evolution.md).
+Chromium's sandbox stays enabled by default. The repository's disposable GitHub-hosted jobs opt
+out with `STRAIGHTEDGE_CHROMIUM_NO_SANDBOX=1`; do not use that escape hatch for untrusted diagrams
+or on a shared host. See [SECURITY.md](./SECURITY.md).
 
-## Install
+The npm package name is reserved in metadata but this preview has not been published. Do not use an
+`npm install --global straightedge` command until a release exists.
+
+## Run from source
+
+This is the initial-release golden path:
 
 ```bash
-npm install
+git clone https://github.com/gmjen/straightedge.git
+cd straightedge
+npm ci
 npm run build
-```
-
-```bash
-node dist/cli.js render pipeline.mmd
-node dist/cli.js inspect pipeline.mmd
-node dist/cli.js check pipeline.mmd
-node dist/cli.js edit pipeline.mmd
 node dist/cli.js doctor
-node dist/cli.js mcp
+node dist/cli.js render examples/pipeline.mmd
+node dist/cli.js edit examples/pipeline.mmd
 ```
 
-`render` writes a PNG beside the Mermaid source by default. Add `--svg` for SVG output.
+`render` writes PNG beside the source by default. `--svg` writes SVG and `--output <path>` chooses a
+different destination. Structured commands accept `--json`. Exit code `0` means no warning or
+error was found, `1` means reviewable warnings, and `2` means a blocking diagnostic or runtime/input
+failure.
 
-Common conversational mutations now have CLI equivalents:
+## Conversational edit loop
+
+Inspect first, submit a coherent operation or transaction, then read the returned image and scoped
+checks:
 
 ```bash
-node dist/cli.js align pipeline.mmd ingest enrich model --edge top
-node dist/cli.js distribute pipeline.mmd ingest enrich model --axis horizontal --gap 64
-node dist/cli.js resize pipeline.mmd db --scale 0.9
-node dist/cli.js frame pipeline.mmd slides-16:9
-node dist/cli.js theme pipeline.mmd executive-light
-node dist/cli.js repair pipeline.mmd
+node dist/cli.js inspect chart.mmd
+node dist/cli.js align chart.mmd box_a box_b --edge top
+node dist/cli.js distribute chart.mmd ingest enrich model database \
+  --axis horizontal --order given --gap 24
+node dist/cli.js row chart.mmd ingest enrich model database --gap 24
+node dist/cli.js stack chart.mmd ceo chief lead --gap 32
+node dist/cli.js resize chart.mmd circle_y --scale 0.9
+node dist/cli.js history chart.mmd
+node dist/cli.js explain chart.mmd
 ```
 
-Use `apply` with a JSON array when one request requires several operations. The batch renders and
-checks in memory, then commits once. If an error remains—such as clipped text, overlap, an edge
-crossing, an obscured arrowhead, or unreadable frame scaling—the sidecar remains byte-identical.
+Given-order distribution, row, and stack use the listed node order and persist it in sidecar v3.
+Old v1/v2 distribute operations with no `order` retain legacy current-position ordering. Preview a
+v3 migration with `migrate`; add `--yes` to write it.
+
+Circle resizing is shape-aware: a scale changes both axes, and specifying only width or height
+resolves a single diameter. Rectangle dimensions remain independently editable. All resizing is
+center-preserving and labels are not scaled.
+
+Use `apply` for one atomic batch:
 
 ```bash
-npm test          # fast layout-engine tests
-npm run test:coverage # Node coverage report for pure/domain modules
-npm run test:e2e  # build and verify real Chromium paint output
-npm run test:all  # type-check plus both suites
+node dist/cli.js apply chart.mmd '[
+  {"op":"row_nodes","nodes":["a","b","c"],"gap":32},
+  {"op":"resize_node","node":"c","width":120}
+]' --json
 ```
 
-## Connect an AI agent
+The candidate is rendered and checked before one compare-and-swap sidecar write. A skipped ID,
+blocking geometry problem, parse failure, or runtime failure leaves the prior bytes unchanged.
 
-Build the package, then configure your MCP client to run this command from the repository:
+## Checks and honest claims
+
+Every JSON and MCP result contains `check.profile`, `check.completed`, named check stages, and a
+bounded `check.claim`. A successful result says:
+
+```text
+No blocking problems were detected by the active checks.
+```
+
+`geometry` checks replay, labels/shapes, overlap/gaps, edges, arrowheads, stale operations, and the
+required browser runtime. `presentation` includes those checks plus target-frame readability and
+advisories for unusually long connectors, doglegs, edited-direction contradictions, and excessive
+frame whitespace. A persisted frame activates `presentation` automatically:
+
+```bash
+node dist/cli.js check chart.mmd --profile presentation --json
+node dist/cli.js check chart.mmd --profile presentation --suppress <stable-problem-id>
+```
+
+Suppression is request-scoped and never hides errors. A `clean` status means the active checks
+reported nothing, `review` means warnings require judgment, and `failed` means a blocking issue or
+required-stage failure.
+
+## Safe history, undo, and reset
+
+`history` reports whether every operation is effective, overridden, partially overridden, or
+skipped. `explain` summarizes source direction, effective ordering, presentation policy, redundant
+intent, and edits that oppose or later adjust earlier intent.
+
+Undo replays and renders the candidate before atomically removing the final operation. Reset is
+preview-only unless explicitly confirmed:
+
+```bash
+node dist/cli.js undo chart.mmd
+node dist/cli.js reset chart.mmd                 # preview; no write
+node dist/cli.js reset chart.mmd --yes           # move sidecar into .straightedge/backups/
+node dist/cli.js restore chart.mmd <backup-path> # preview
+node dist/cli.js restore chart.mmd <backup-path> --yes
+```
+
+`reset --yes --no-backup` is intentionally explicit and unrecoverable. Local backup state is
+ignored by Git.
+
+## Local editor
+
+`node dist/cli.js edit chart.mmd` starts a token-protected server bound only to `127.0.0.1`. The
+editor and agent surfaces share the same transaction engine. It supports drag, partial and
+shape-aware resize, numbered selection order, align/distribute/row/stack, safe repair, transactional
+undo, session redo, recoverable reset, viewport-only zoom/fit, and inline errors.
+
+Unsaved Mermaid source is visibly marked. Any layout action or refresh offers **Save and apply**,
+**Discard and apply**, or **Cancel**; render responses cannot overwrite a dirty draft. Textarea
+undo remains native, while Cmd/Ctrl+Z and Cmd/Ctrl+Shift+Z operate on layout history when focus is
+outside text entry.
+
+## Connect an AI agent with MCP
+
+Build from source, then configure an MCP client with the absolute CLI path:
 
 ```json
 {
@@ -130,32 +181,27 @@ Build the package, then configure your MCP client to run this command from the r
 }
 ```
 
-The useful loop is intentionally small:
+The intended journey is inspect → describe visual intent → submit one semantic transaction →
+examine the rendered image and structured result → refine or undo. The MCP server exposes the same
+row, stack, distribute, resize, history, explain, undo, reset-preview, and restore behavior as the
+CLI.
 
-1. Ask the agent to create or open a Mermaid flowchart.
-2. Describe the visual change in plain language.
-3. The agent inspects real node IDs and submits the visual intent as one semantic transaction.
-4. Straightedge renders once, measures labels and shapes in Chromium, checks geometry and the target
-   frame, then either commits or rolls back.
-5. The agent receives the image, exact applied operations, frame status, and structured problems or
-   suggested repairs before continuing the conversation.
+## Development and security
 
-Every committed operation is appended atomically to `<name>.layout.json`. `undo` removes the last
-one; `reset_layout` deletes the sidecar and returns to a fresh ELK baseline. The local editor writes
-the same operations: drag records `move_node`, resize records `resize_node`, and its align and
-distribute controls use the same transaction API as the agent. Undo persists by popping the log;
-redo is intentionally scoped to the current editor session and clears after a new branch of work.
+```bash
+npm test              # fast domain tests
+npm run test:coverage # baseline Node coverage report
+npm run test:e2e      # real Chromium, CLI, transaction, and editor flows
+npm run test:docs     # links, policy files, and visual dimensions
+npm run test:package  # pack, clean install, CLI/API/types consumer smoke
+npm run test:all      # complete local release gate
+```
 
-## Contributing
-
-At this stage, examples are worth more than code. Open an issue with a diagram you gave up on:
-
-1. the Mermaid source
-2. what it renders as
-3. how you wish you could adjust it
-
-That's what decides which operations exist.
+Straightedge has no telemetry and sends no diagram to a Straightedge service. The editor is not
+safe to expose remotely. Mermaid uses strict security mode with HTML labels disabled; callers
+should still avoid untrusted source. See [SECURITY.md](./SECURITY.md) for the private reporting
+channel and [CONTRIBUTING.md](./CONTRIBUTING.md) for fixture and pull-request guidance.
 
 ## License
 
-Apache-2.0
+Copyright 2026 Greg Jennings. Licensed under the [Apache License 2.0](./LICENSE).

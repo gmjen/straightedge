@@ -6,12 +6,15 @@ export function structuredResult(result: RenderResult | ResolveResult) {
     canvas: result.canvas,
     naturalCanvas: result.naturalCanvas,
     frame: result.frame,
+    check: result.check,
+    sourceDirection: result.sourceDirection,
     presentation: result.presentation,
     ...(result.theme === undefined ? {} : { theme: result.theme }),
     nodes: Object.values(result.layout.nodes),
     edges: result.layout.edges,
     warnings: result.warnings,
     problems: result.problems,
+    trace: result.trace,
   };
 }
 

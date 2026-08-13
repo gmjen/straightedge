@@ -6,7 +6,7 @@ import { test } from "node:test";
 
 import { logPathFor, makeLog, readLog, readLogSnapshot, writeLog, writeOpLog } from "../src/store.js";
 
-test("v1 logs remain v1 until a presentation/theme/editor operation requires v2", () => {
+test("v1/v2 logs retain legacy meaning and ordered operations promote new writes to v3", () => {
   const directory = mkdtempSync(join(tmpdir(), "straightedge-store-"));
   const source = join(directory, "diagram.mmd");
   try {
@@ -19,6 +19,20 @@ test("v1 logs remain v1 until a presentation/theme/editor operation requires v2"
       { op: "apply_theme", theme: "executive-light" },
     ]);
     assert.equal(readLog(source).version, 2);
+
+    writeLog(source, [
+      { op: "apply_theme", theme: "executive-light" },
+      { op: "distribute_nodes", nodes: ["a", "b"], axis: "horizontal", order: "given" },
+    ]);
+    assert.equal(readLog(source).version, 3);
+
+    writeFileSync(logPathFor(source), JSON.stringify({
+      version: 2,
+      ops: [{ op: "distribute_nodes", nodes: ["b", "a"], axis: "horizontal" }],
+    }));
+    const legacy = readLog(source);
+    assert.equal(legacy.version, 2);
+    assert.equal(legacy.ops[0]?.op, "distribute_nodes");
   } finally {
     rmSync(directory, { recursive: true, force: true });
   }

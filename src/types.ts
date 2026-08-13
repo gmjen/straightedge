@@ -87,6 +87,22 @@ export interface DistributeNodes {
   nodes: string[];
   axis: Axis;
   gap?: number;
+  /** Omitted in legacy logs means current. New operations always persist this explicitly. */
+  order?: "given" | "current";
+}
+
+export interface RowNodes {
+  op: "row_nodes";
+  nodes: string[];
+  gap: number;
+  align?: "top" | "center" | "bottom";
+}
+
+export interface StackNodes {
+  op: "stack_nodes";
+  nodes: string[];
+  gap: number;
+  align?: "left" | "center" | "right";
 }
 
 export interface EqualizeSize {
@@ -151,6 +167,8 @@ export type LayoutOp =
   | ResizeNode
   | AlignNodes
   | DistributeNodes
+  | RowNodes
+  | StackNodes
   | EqualizeSize
   | PlaceRelative
   | SetNodeStyle
@@ -160,7 +178,7 @@ export type Op = LayoutOp | SetPresentation | ApplyTheme | RerouteEdges;
 
 export interface OpLogV1 {
   version: 1;
-  ops: Array<Exclude<Op, SetPresentation | ApplyTheme | StyleNodes | RerouteEdges>>;
+  ops: Array<Exclude<Op, SetPresentation | ApplyTheme | StyleNodes | RerouteEdges | RowNodes | StackNodes>>;
 }
 
 export interface OpLogV2 {
@@ -168,7 +186,12 @@ export interface OpLogV2 {
   ops: Op[];
 }
 
-export type OpLog = OpLogV1 | OpLogV2;
+export interface OpLogV3 {
+  version: 3;
+  ops: Op[];
+}
+
+export type OpLog = OpLogV1 | OpLogV2 | OpLogV3;
 
 export interface DiagramState {
   layout: Layout;
@@ -188,7 +211,11 @@ export type ProblemKind =
   | "outside_target_frame"
   | "minimum_font_size"
   | "stale_operation"
-  | "runtime_unavailable";
+  | "runtime_unavailable"
+  | "long_connector"
+  | "excessive_dogleg"
+  | "direction_contradiction"
+  | "excessive_whitespace";
 
 export interface ProblemSubjects {
   nodes?: string[];
@@ -237,4 +264,27 @@ export interface VisualEdgeLabelMeasurement {
 export interface VisualMeasurements {
   nodes: VisualNodeMeasurement[];
   edgeLabels: VisualEdgeLabelMeasurement[];
+}
+
+export type DiagnosticProfile = "geometry" | "presentation";
+
+export interface CheckRun {
+  name: string;
+  status: "passed" | "warning" | "failed" | "skipped";
+}
+
+export interface CheckSummary {
+  profile: DiagnosticProfile;
+  completed: boolean;
+  checks: CheckRun[];
+  claim: string;
+}
+
+export interface ReplayTrace {
+  index: number;
+  op: Op;
+  state: "effective" | "partially_overridden" | "overridden" | "skipped";
+  changedNodes: string[];
+  changedEdges: string[];
+  notes: string[];
 }

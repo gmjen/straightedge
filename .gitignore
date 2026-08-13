@@ -1,0 +1,11 @@
+.DS_Store
+node_modules/
+dist/
+coverage/
+*.tgz
+*.log
+.straightedge/
+examples/*.png
+examples/*.svg
+!docs/assets/*.png
+!docs/assets/*.svg

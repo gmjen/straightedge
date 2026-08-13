@@ -4,7 +4,7 @@ import { readFileSync } from "node:fs";
 import type { Browser } from "puppeteer";
 import { baseline } from "./baseline.js";
 import { normalize, type Canvas } from "./canvas.js";
-import { visualProblems } from "./diagnostics.js";
+import { checkSummary, presentationProblems, visualProblems } from "./diagnostics.js";
 import { reanchor } from "./edges.js";
 import { lint, problem } from "./lint.js";
 import { paint, parseMermaid, withBrowserSession } from "./paint.js";
@@ -14,6 +14,8 @@ import { readLog } from "./store.js";
 import { applyTheme, themeBackground } from "./themes.js";
 import type {
   FrameStatus,
+  CheckSummary,
+  DiagnosticProfile,
   Layout,
   Op,
   Presentation,
@@ -21,7 +23,13 @@ import type {
   StraightedgeStatus,
   ThemeName,
   VisualMeasurements,
+  ReplayTrace,
 } from "./types.js";
+
+export interface RenderOptions {
+  profile?: DiagnosticProfile;
+  suppress?: string[];
+}
 
 export interface ResolveResult {
   layout: Layout;
@@ -32,6 +40,11 @@ export interface ResolveResult {
   presentation: Presentation;
   theme?: ThemeName;
   frame: FrameStatus;
+  sourceDirection: string;
+  trace: ReplayTrace[];
+  check: CheckSummary;
+  /** Nodes touched during replay; used to scope presentation-direction advice. */
+  moved: Set<string>;
 }
 
 export interface RenderResult extends ResolveResult {
@@ -41,12 +54,12 @@ export interface RenderResult extends ResolveResult {
   visual: VisualMeasurements;
 }
 
-export async function render(sourcePath: string, browser?: Browser): Promise<RenderResult> {
-  return renderWithOps(sourcePath, [...readLog(sourcePath).ops], browser);
+export async function render(sourcePath: string, browser?: Browser, options: RenderOptions = {}): Promise<RenderResult> {
+  return renderWithOps(sourcePath, [...readLog(sourcePath).ops], browser, options);
 }
 
-export async function renderWithOps(sourcePath: string, ops: Op[], browser?: Browser): Promise<RenderResult> {
-  if (!browser) return withBrowserSession((active) => renderWithOps(sourcePath, ops, active));
+export async function renderWithOps(sourcePath: string, ops: Op[], browser?: Browser, options: RenderOptions = {}): Promise<RenderResult> {
+  if (!browser) return withBrowserSession((active) => renderWithOps(sourcePath, ops, active, options));
   const resolved = await resolveWithOps(sourcePath, ops, browser);
   const source = readSource(sourcePath);
   const painted = await paint(source, resolved.layout, resolved.canvas, browser);
@@ -56,12 +69,20 @@ export async function renderWithOps(sourcePath: string, ops: Op[], browser?: Bro
     resolved.frame,
     minimumFontSize(resolved.presentation),
   );
-  const problems = [...resolved.problems, ...visual];
+  const profile = options.profile ?? (resolved.frame.active ? "presentation" : "geometry");
+  const advisory = profile === "presentation"
+    ? presentationProblems(resolved.layout, resolved.naturalCanvas, resolved.canvas, resolved.sourceDirection, resolved.moved)
+    : [];
+  const suppressed = new Set(options.suppress ?? []);
+  const problems = [...resolved.problems, ...visual, ...advisory].filter(
+    (candidate) => candidate.severity === "error" || !suppressed.has(candidate.id),
+  );
   return {
     ...resolved,
     ...painted,
     problems,
     status: statusOf(resolved.warnings, problems),
+    check: checkSummary(profile, problems),
   };
 }
 
@@ -101,6 +122,10 @@ export async function resolveWithOps(
     presentation: replayed.presentation,
     ...(replayed.theme === undefined ? {} : { theme: replayed.theme }),
     frame: presented.frame,
+    sourceDirection: data.direction,
+    trace: replayed.trace,
+    moved: replayed.moved,
+    check: checkSummary(presented.frame.active ? "presentation" : "geometry", [...lint(themed), ...staleProblems], false),
   };
 }
 

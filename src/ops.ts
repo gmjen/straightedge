@@ -20,7 +20,9 @@ import type {
   Op,
   PlaceRelative,
   ResizeNode,
+  RowNodes,
   SetNodeStyle,
+  StackNodes,
   StyleNodes,
 } from "./types.js";
 
@@ -59,7 +61,12 @@ export function moveNode(layout: Layout, p: MoveNode): Layout {
 
 export function resizeNode(layout: Layout, p: ResizeNode): Layout {
   const n = get(layout, p.node);
-  return withNodes(layout, { [n.id]: resized(n, p.width ?? n.width, p.height ?? n.height) });
+  // Circles have one meaningful size. A caller may specify either dimension;
+  // replay resolves it to a diameter so every surface preserves the shape.
+  const circleDiameter = n.shape === "circle" ? (p.width ?? p.height) : undefined;
+  return withNodes(layout, {
+    [n.id]: resized(n, circleDiameter ?? p.width ?? n.width, circleDiameter ?? p.height ?? n.height),
+  });
 }
 
 /** nodes[0] anchors and does not move. See SPEC.md §7 for why first-wins. */
@@ -93,13 +100,15 @@ function alignOne(n: Node, a: Node, edge: AlignEdge): Node {
 }
 
 export function distributeNodes(layout: Layout, p: DistributeNodes): Layout {
+  assertUnique(p.nodes, "distribute_nodes");
   const horizontal = p.axis === "horizontal";
   const size = (n: Node) => (horizontal ? n.width : n.height);
   const lead = (n: Node) => (horizontal ? n.x : n.y);
 
   // Sorted by current position, not list order — the agent shouldn't need to
   // know the existing arrangement to space things evenly.
-  const nodes = p.nodes.map((id) => get(layout, id)).sort((m, n) => lead(m) - lead(n));
+  const nodes = p.nodes.map((id) => get(layout, id));
+  if ((p.order ?? "current") === "current") nodes.sort((m, n) => lead(m) - lead(n));
   if (nodes.length < 2) return layout;
 
   let gap = p.gap;
@@ -119,6 +128,46 @@ export function distributeNodes(layout: Layout, p: DistributeNodes): Layout {
   for (const n of nodes.slice(1)) {
     updates[n.id] = horizontal ? { ...n, x: cursor } : { ...n, y: cursor };
     cursor += size(n) + gap;
+  }
+  return withNodes(layout, updates);
+}
+
+export function rowNodes(layout: Layout, p: RowNodes): Layout {
+  assertUnique(p.nodes, "row_nodes");
+  const nodes = p.nodes.map((id) => get(layout, id));
+  if (nodes.length === 0) return layout;
+  const anchor = nodes[0]!;
+  const align = p.align ?? "center";
+  const updates: Record<string, Node> = {};
+  let cursor = anchor.x;
+  for (const n of nodes) {
+    const y = align === "top"
+      ? anchor.y
+      : align === "bottom"
+        ? bottom(anchor) - n.height
+        : centerY(anchor) - n.height / 2;
+    updates[n.id] = { ...n, x: cursor, y };
+    cursor += n.width + p.gap;
+  }
+  return withNodes(layout, updates);
+}
+
+export function stackNodes(layout: Layout, p: StackNodes): Layout {
+  assertUnique(p.nodes, "stack_nodes");
+  const nodes = p.nodes.map((id) => get(layout, id));
+  if (nodes.length === 0) return layout;
+  const anchor = nodes[0]!;
+  const align = p.align ?? "center";
+  const updates: Record<string, Node> = {};
+  let cursor = anchor.y;
+  for (const n of nodes) {
+    const x = align === "left"
+      ? anchor.x
+      : align === "right"
+        ? right(anchor) - n.width
+        : centerX(anchor) - n.width / 2;
+    updates[n.id] = { ...n, x, y: cursor };
+    cursor += n.height + p.gap;
   }
   return withNodes(layout, updates);
 }
@@ -194,6 +243,10 @@ export function applyOp(layout: Layout, op: LayoutOp): Layout {
       return alignNodes(layout, op);
     case "distribute_nodes":
       return distributeNodes(layout, op);
+    case "row_nodes":
+      return rowNodes(layout, op);
+    case "stack_nodes":
+      return stackNodes(layout, op);
     case "equalize_size":
       return equalizeSize(layout, op);
     case "place_relative":
@@ -214,6 +267,8 @@ export function nodeIdsIn(op: Op): string[] {
       return [op.node];
     case "align_nodes":
     case "distribute_nodes":
+    case "row_nodes":
+    case "stack_nodes":
     case "equalize_size":
       return op.nodes;
     case "place_relative":
@@ -251,4 +306,8 @@ export function movedNodeIds(op: Op): string[] {
     default:
       return nodeIdsIn(op);
   }
+}
+
+function assertUnique(ids: string[], operation: string): void {
+  if (new Set(ids).size !== ids.length) throw new Error(`${operation} contains duplicate node ids`);
 }

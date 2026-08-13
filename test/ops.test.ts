@@ -131,6 +131,13 @@ test("resize is centre-preserving, not corner-anchored", () => {
   assert.deepEqual(geometry(layout), { a: { x: 75, y: 100, w: 100, h: 50 } });
 });
 
+test("a one-dimensional circle resize resolves to an aspect-preserving diameter", () => {
+  const circle = { ...node("circle", 100, 100, 50, 50), shape: "circle" as const };
+  const { layout } = replay(layoutOf(circle), [{ op: "resize_node", node: "circle", width: 45 }]);
+
+  assert.deepEqual(geometry(layout), { circle: { x: 102.5, y: 102.5, w: 45, h: 45 } });
+});
+
 test("align_nodes anchors on the first node listed", () => {
   const before = layoutOf(node("a", 0, 10, 40, 40), node("b", 100, 90, 40, 40));
 
@@ -162,6 +169,56 @@ test("distribute_nodes with no gap divides the existing span evenly", () => {
   assert.equal(layout.nodes["a"]!.x, 0);
   assert.equal(layout.nodes["b"]!.x, 125);
   assert.equal(layout.nodes["c"]!.x, 250); // last node stays put
+});
+
+test("given-order distribution is stable with unequal sizes and a changed baseline", () => {
+  const first = layoutOf(node("a", 0, 0, 50, 20), node("b", 400, 0, 30, 20), node("c", 200, 0, 70, 20));
+  const changed = layoutOf(node("a", 900, 0, 50, 20), node("b", 500, 0, 30, 20), node("c", -200, 0, 70, 20));
+  const op: Op = { op: "distribute_nodes", nodes: ["b", "a", "c"], axis: "horizontal", gap: 10, order: "given" };
+
+  assert.deepEqual(
+    [replay(first, [op]).layout, replay(changed, [op]).layout].map((layout) =>
+      ["b", "a", "c"].map((id) => layout.nodes[id]!.x - layout.nodes.b!.x)),
+    [[0, 40, 100], [0, 40, 100]],
+  );
+});
+
+test("row and stack preserve given order, first-node anchor, sizes, and cross-axis alignment", () => {
+  const before = layoutOf(node("a", 100, 80, 40, 20), node("b", 0, 0, 60, 40), node("c", 900, 500, 30, 60));
+  const row = replay(before, [{ op: "row_nodes", nodes: ["a", "c", "b"], gap: 12, align: "bottom" }]).layout;
+  assert.deepEqual(geometry(row), {
+    a: { x: 100, y: 80, w: 40, h: 20 },
+    b: { x: 194, y: 60, w: 60, h: 40 },
+    c: { x: 152, y: 40, w: 30, h: 60 },
+  });
+
+  const stack = replay(before, [{ op: "stack_nodes", nodes: ["a", "c", "b"], gap: 8, align: "right" }]).layout;
+  assert.deepEqual(geometry(stack), {
+    a: { x: 100, y: 80, w: 40, h: 20 },
+    b: { x: 80, y: 176, w: 60, h: 40 },
+    c: { x: 110, y: 108, w: 30, h: 60 },
+  });
+});
+
+test("ordered operations reject duplicate IDs and stale IDs remain explainably skipped", () => {
+  const before = layoutOf(node("a", 0, 0, 40, 20), node("b", 100, 0, 40, 20));
+  assert.throws(() => replay(before, [{ op: "row_nodes", nodes: ["a", "a"], gap: 10 }]), /duplicate node id/);
+  assert.throws(() => replay(before, [{ op: "stack_nodes", nodes: ["b", "b"], gap: 10 }]), /duplicate node id/);
+  const stale = replay(before, [{ op: "row_nodes", nodes: ["a", "missing"], gap: 10 }]);
+  assert.equal(stale.trace[0]?.state, "skipped");
+  assert.match(stale.trace[0]?.notes[0] ?? "", /missing/);
+});
+
+test("replay trace separates overridden setters, accumulating moves, and stale intent", () => {
+  const traced = replay(layoutOf(node("a", 0, 0, 40, 20)), [
+    { op: "resize_node", node: "a", width: 50 },
+    { op: "resize_node", node: "a", width: 60 },
+    { op: "move_node", node: "a", dx: 10, dy: 0 },
+    { op: "move_node", node: "a", dx: 5, dy: 0 },
+    { op: "move_node", node: "ghost", dx: 1, dy: 1 },
+  ]);
+  assert.deepEqual(traced.trace.map((item) => item.state), ["overridden", "effective", "effective", "effective", "skipped"]);
+  assert.match(traced.trace[0]?.notes[0] ?? "", /superseded by op 1/);
 });
 
 test("equalize_size uses the maximum so labels never clip", () => {

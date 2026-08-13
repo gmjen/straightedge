@@ -1,0 +1,66 @@
+name: CI
+
+on:
+  push:
+    branches: [main]
+  pull_request:
+
+permissions:
+  contents: read
+
+jobs:
+  static-and-unit:
+    runs-on: ubuntu-latest
+    timeout-minutes: 10
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-node@v4
+        with:
+          node-version: 22
+          cache: npm
+      - run: npm ci
+      - run: npm run check
+      - run: npm test
+      - run: npm run test:coverage
+      - run: npm audit --omit=dev --audit-level=high
+
+  browser-e2e:
+    runs-on: ubuntu-latest
+    timeout-minutes: 15
+    env:
+      # GitHub-hosted runners isolate the job VM; never use this for untrusted diagrams.
+      STRAIGHTEDGE_CHROMIUM_NO_SANDBOX: "1"
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-node@v4
+        with:
+          node-version: 22
+          cache: npm
+      - run: npm ci
+      - run: npm run test:e2e
+      - name: Upload failure evidence
+        if: failure()
+        uses: actions/upload-artifact@v4
+        with:
+          name: browser-e2e-failure
+          path: test-results/
+          if-no-files-found: ignore
+          retention-days: 3
+
+  package:
+    runs-on: ubuntu-latest
+    timeout-minutes: 15
+    env:
+      # Package smoke launches Chromium inside this disposable, trusted job VM.
+      STRAIGHTEDGE_CHROMIUM_NO_SANDBOX: "1"
+    steps:
+      - uses: actions/checkout@v4
+      - name: Assert generated output is absent
+        run: test ! -d dist
+      - uses: actions/setup-node@v4
+        with:
+          node-version: 22
+          cache: npm
+      - run: npm ci
+      - run: npm run test:docs
+      - run: npm run test:package

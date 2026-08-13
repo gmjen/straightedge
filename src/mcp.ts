@@ -7,11 +7,12 @@ import { StdioServerTransport } from "@modelcontextprotocol/sdk/server/stdio.js"
 import { z } from "zod";
 import type { Browser } from "puppeteer";
 import { openBrowser } from "./paint.js";
+import { explain, history } from "./explain.js";
 import { render, resolve, type RenderResult } from "./render.js";
 import { structuredResult } from "./result.js";
 import { cleanPresentation, cleanStyle, opSchema, presentationSchema, styleSchema } from "./schemas.js";
-import { deleteLog, popOp, readLog } from "./store.js";
-import { applyTransaction, repair } from "./transaction.js";
+import { readLog } from "./store.js";
+import { applyTransaction, repair, resetLayout, restoreLayout, undoTransaction } from "./transaction.js";
 import type { Op } from "./types.js";
 
 export const INSTRUCTIONS = `
@@ -54,7 +55,7 @@ function imageResult(result: RenderResult, format: "png" | "svg" = "png", extra:
   ];
   return {
     content: [
-      { type: "text" as const, text: notes.join("\n") || "Layout is visually clean." },
+      { type: "text" as const, text: notes.join("\n") || result.check.claim },
       {
         type: "image" as const,
         data: format === "png" ? result.png.toString("base64") : Buffer.from(result.svg).toString("base64"),
@@ -74,6 +75,8 @@ export const TOOLS = [
   "resize_node",
   "align_nodes",
   "distribute_nodes",
+  "row_nodes",
+  "stack_nodes",
   "equalize_size",
   "place_relative",
   "set_node_style",
@@ -83,13 +86,16 @@ export const TOOLS = [
   "reroute_edges",
   "apply_transaction",
   "repair",
+  "history",
+  "explain",
   "undo",
   "reset_layout",
+  "restore_layout",
 ] as const;
 
 export async function startServer(): Promise<void> {
   const server = new McpServer(
-    { name: "straightedge", version: "0.2.0" },
+    { name: "straightedge", version: "0.2.0-alpha.1" },
     { instructions: INSTRUCTIONS },
   );
 
@@ -157,13 +163,20 @@ export async function startServer(): Promise<void> {
     "check_layout",
     {
       description: "Check for overlaps, tight gaps, edge crossings, and stale layout operations.",
-      inputSchema: { path: pathSchema },
+      inputSchema: {
+        path: pathSchema,
+        profile: z.enum(["geometry", "presentation"]).optional(),
+        suppress: z.array(z.string()).optional(),
+      },
     },
-    async ({ path }) => {
-      const result = await render(path, await browserForMcp());
+    async ({ path, profile, suppress }) => {
+      const result = await render(path, await browserForMcp(), {
+        ...(profile === undefined ? {} : { profile }),
+        ...(suppress === undefined ? {} : { suppress }),
+      });
       const messages = [...result.warnings, ...result.problems.map((problem) => problem.message)];
       return {
-        content: [{ type: "text" as const, text: messages.join("\n") || "Layout is visually clean." }],
+        content: [{ type: "text" as const, text: messages.join("\n") || result.check.claim }],
         structuredContent: structuredResult(result),
       };
     },
@@ -223,21 +236,51 @@ export async function startServer(): Promise<void> {
   server.registerTool(
     "distribute_nodes",
     {
-      description: "Space nodes by current position. With a gap, packs them from the first node.",
+      description: "Space nodes deterministically in argument order by default, or preserve current spatial order explicitly.",
       inputSchema: {
         path: pathSchema,
         nodes: z.array(z.string()).min(2),
         axis: z.enum(["horizontal", "vertical"]),
         gap: z.number().optional(),
+        order: z.enum(["given", "current"]).optional(),
       },
     },
-    ({ path, nodes, axis, gap }) =>
+    ({ path, nodes, axis, gap, order }) =>
       mutate(path, {
         op: "distribute_nodes",
         nodes,
         axis,
+        order: order ?? "given",
         ...(gap === undefined ? {} : { gap }),
       }),
+  );
+
+  server.registerTool(
+    "row_nodes",
+    {
+      description: "Place nodes left-to-right in the exact given order with a shared cross-axis alignment.",
+      inputSchema: {
+        path: pathSchema,
+        nodes: z.array(z.string()).min(1),
+        gap: z.number().nonnegative(),
+        align: z.enum(["top", "center", "bottom"]).optional(),
+      },
+    },
+    ({ path, nodes, gap, align }) => mutate(path, { op: "row_nodes", nodes, gap, ...(align === undefined ? {} : { align }) }),
+  );
+
+  server.registerTool(
+    "stack_nodes",
+    {
+      description: "Place nodes top-to-bottom in the exact given order with a shared cross-axis alignment.",
+      inputSchema: {
+        path: pathSchema,
+        nodes: z.array(z.string()).min(1),
+        gap: z.number().nonnegative(),
+        align: z.enum(["left", "center", "right"]).optional(),
+      },
+    },
+    ({ path, nodes, gap, align }) => mutate(path, { op: "stack_nodes", nodes, gap, ...(align === undefined ? {} : { align }) }),
   );
 
   server.registerTool(
@@ -363,20 +406,64 @@ export async function startServer(): Promise<void> {
   );
 
   server.registerTool(
-    "undo",
-    { description: "Remove the most recent layout operation and return the new image.", inputSchema: { path: pathSchema } },
+    "history",
+    {
+      description: "Explain each operation's effective, overridden, or skipped replay state.",
+      inputSchema: { path: pathSchema },
+    },
     async ({ path }) => {
-      popOp(path);
-      return imageResult(await render(path, await browserForMcp()));
+      const trace = await history(path, await browserForMcp());
+      return { content: [{ type: "text" as const, text: JSON.stringify(trace, null, 2) }], structuredContent: { trace } };
+    },
+  );
+
+  server.registerTool(
+    "explain",
+    {
+      description: "Summarize Mermaid direction, effective ordering, active policy, and overridden intent.",
+      inputSchema: { path: pathSchema },
+    },
+    async ({ path }) => {
+      const result = await explain(path, await browserForMcp());
+      return { content: [{ type: "text" as const, text: JSON.stringify(result, null, 2) }], structuredContent: { ...result } };
+    },
+  );
+
+  server.registerTool(
+    "undo",
+    { description: "Atomically remove the most recent operation after a successful candidate render.", inputSchema: { path: pathSchema } },
+    async ({ path }) => {
+      const undone = await undoTransaction(path, await browserForMcp());
+      return imageResult(undone.result, "png", { committed: undone.committed, removed: undone.removed, path: undone.path });
     },
   );
 
   server.registerTool(
     "reset_layout",
-    { description: "Delete every layout operation and return Mermaid's fresh ELK baseline.", inputSchema: { path: pathSchema } },
-    async ({ path }) => {
-      deleteLog(path);
-      return imageResult(await render(path, await browserForMcp()));
+    {
+      description: "Preview a reset, or reset with an automatic recoverable backup when confirm is true.",
+      inputSchema: { path: pathSchema, confirm: z.boolean().optional() },
+    },
+    async ({ path, confirm }) => {
+      const reset = await resetLayout(path, { confirm: confirm ?? false, browser: await browserForMcp() });
+      return imageResult(reset.result, "png", {
+        committed: reset.committed,
+        path: reset.path,
+        operationCount: reset.operationCount,
+        ...(reset.backupPath === undefined ? {} : { backupPath: reset.backupPath }),
+      });
+    },
+  );
+
+  server.registerTool(
+    "restore_layout",
+    {
+      description: "Preview or atomically restore a reset backup.",
+      inputSchema: { path: pathSchema, backupPath: z.string(), confirm: z.boolean().optional() },
+    },
+    async ({ path, backupPath, confirm }) => {
+      const restored = await restoreLayout(path, backupPath, { confirm: confirm ?? false, browser: await browserForMcp() });
+      return imageResult(restored.result, "png", { committed: restored.committed, path: restored.path, backupPath });
     },
   );
 

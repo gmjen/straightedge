@@ -4,18 +4,19 @@ import { readFileSync, writeFileSync } from "node:fs";
 import { Command, Option } from "commander";
 import { doctorBrowser } from "./paint.js";
 import { startEditor } from "./editor.js";
+import { explain, history } from "./explain.js";
 import { render, resolve, type RenderResult } from "./render.js";
 import { structuredResult } from "./result.js";
 import { parseOps } from "./schemas.js";
 import { startServer } from "./mcp.js";
-import { deleteLog, popOp, readLog } from "./store.js";
-import { applyTransaction, repair } from "./transaction.js";
-import type { AlignEdge, NodeStyle, Op, Presentation, PresentationPreset, ThemeName } from "./types.js";
+import { makeLog, readLog, readLogSnapshot, writeOpLog } from "./store.js";
+import { applyTransaction, repair, resetLayout, restoreLayout, undoTransaction } from "./transaction.js";
+import type { AlignEdge, DiagnosticProfile, NodeStyle, Op, Presentation, PresentationPreset, ThemeName } from "./types.js";
 
 const program = new Command()
   .name("straightedge")
   .description("Conversational layout control and publishability checks for Mermaid flowcharts")
-  .version("0.2.0");
+  .version("0.2.0-alpha.1");
 
 program
   .command("render <source>")
@@ -39,8 +40,12 @@ program.command("inspect <source>").option("--geometry-only", "skip final browse
   console.log(JSON.stringify({ ...structuredResult(result), opLog: readLog(source) }, null, 2));
 });
 
-program.command("check <source>").option("--json", "print the structured result").action(async (source: string, options: { json?: boolean }) => {
-  const result = await render(source);
+program.command("check <source>")
+  .option("--json", "print the structured result")
+  .addOption(new Option("--profile <profile>").choices(["geometry", "presentation"]))
+  .option("--suppress <problem-id>", "suppress one advisory for this invocation", collect, [])
+  .action(async (source: string, options: { json?: boolean; profile?: DiagnosticProfile; suppress: string[] }) => {
+  const result = await render(source, undefined, { ...(options.profile === undefined ? {} : { profile: options.profile }), suppress: options.suppress });
   if (options.json) console.log(JSON.stringify(structuredResult(result), null, 2));
   else report(result);
   setExit(result);
@@ -81,11 +86,30 @@ program.command("align <source> <nodes...>")
 
 program.command("distribute <source> <nodes...>")
   .addOption(new Option("--axis <axis>").choices(["horizontal", "vertical"]).makeOptionMandatory())
+  .addOption(new Option("--order <order>").choices(["given", "current"]).default("given"))
   .option("--gap <pixels>", "explicit gap", number)
   .option("--json")
-  .action((source: string, nodes: string[], options: { axis: "horizontal" | "vertical"; gap?: number; json?: boolean }) => {
+  .action((source: string, nodes: string[], options: { axis: "horizontal" | "vertical"; order: "given" | "current"; gap?: number; json?: boolean }) => {
     if (nodes.length < 2) throw new Error("distribute requires at least two nodes");
-    return mutate(source, [{ op: "distribute_nodes", nodes, axis: options.axis, ...(options.gap === undefined ? {} : { gap: options.gap }) }], options.json);
+    return mutate(source, [{ op: "distribute_nodes", nodes, axis: options.axis, order: options.order, ...(options.gap === undefined ? {} : { gap: options.gap }) }], options.json);
+  });
+
+program.command("row <source> <nodes...>")
+  .requiredOption("--gap <pixels>", "gap between nodes", nonnegative)
+  .addOption(new Option("--align <alignment>").choices(["top", "center", "bottom"]).default("center"))
+  .option("--json")
+  .action((source: string, nodes: string[], options: { gap: number; align: "top" | "center" | "bottom"; json?: boolean }) => {
+    if (nodes.length < 2) throw new Error("row requires at least two nodes");
+    return mutate(source, [{ op: "row_nodes", nodes, gap: options.gap, align: options.align }], options.json);
+  });
+
+program.command("stack <source> <nodes...>")
+  .requiredOption("--gap <pixels>", "gap between nodes", nonnegative)
+  .addOption(new Option("--align <alignment>").choices(["left", "center", "right"]).default("center"))
+  .option("--json")
+  .action((source: string, nodes: string[], options: { gap: number; align: "left" | "center" | "right"; json?: boolean }) => {
+    if (nodes.length < 2) throw new Error("stack requires at least two nodes");
+    return mutate(source, [{ op: "stack_nodes", nodes, gap: options.gap, align: options.align }], options.json);
   });
 
 program.command("equalize <source> <nodes...>")
@@ -168,16 +192,79 @@ program.command("repair <source>").option("--json").action(async (source: string
   setExit(repaired.result);
 });
 
-program.command("undo <source>").action(async (source: string) => {
-  popOp(source);
-  const result = await render(source);
-  report(result);
-  setExit(result);
+program.command("history <source>").option("--json").action(async (source: string, options: { json?: boolean }) => {
+  const trace = await history(source);
+  if (options.json) console.log(JSON.stringify(trace, null, 2));
+  else for (const item of trace) console.log(`${item.index}: ${item.op.op} — ${item.state}${item.notes.length ? ` (${item.notes.join("; ")})` : ""}`);
 });
 
-program.command("reset <source>").action((source: string) => {
-  deleteLog(source);
-  console.log(`reset ${source}`);
+program.command("explain <source>").option("--json").action(async (source: string, options: { json?: boolean }) => {
+  const result = await explain(source);
+  if (options.json) console.log(JSON.stringify(result, null, 2));
+  else {
+    console.log(`Mermaid direction: ${result.sourceDirection}`);
+    console.log(`Horizontal order: ${result.horizontalOrder.join(" → ")}`);
+    console.log(`Vertical order: ${result.verticalOrder.join(" → ")}`);
+    console.log(`Checks: ${result.diagnosticProfile} — ${result.claim}`);
+    for (const finding of result.findings) console.log(`${finding.kind}: ${finding.message}`);
+  }
+});
+
+program.command("undo <source>").option("--json").action(async (source: string, options: { json?: boolean }) => {
+  const undone = await undoTransaction(source);
+  if (options.json) console.log(JSON.stringify({ committed: undone.committed, removed: undone.removed, path: undone.path, ...structuredResult(undone.result) }, null, 2));
+  else {
+    console.log(undone.committed ? `updated ${undone.path}\nremoved ${JSON.stringify(undone.removed)}` : `no operation to undo in ${undone.path}`);
+    report(undone.result);
+  }
+  setExit(undone.result);
+});
+
+program.command("reset <source>")
+  .option("--yes", "perform the reset after previewing the baseline")
+  .option("--no-backup", "do not create a recoverable backup; requires --yes")
+  .option("--json")
+  .action(async (source: string, options: { yes?: boolean; backup: boolean; json?: boolean }) => {
+    if (options.backup === false && !options.yes) throw new Error("--no-backup requires --yes");
+    const reset = await resetLayout(source, { ...(options.yes === undefined ? {} : { confirm: options.yes }), backup: options.backup });
+    const summary = { committed: reset.committed, path: reset.path, operationCount: reset.operationCount, version: reset.version, backupPath: reset.backupPath, ...structuredResult(reset.result) };
+    if (options.json) console.log(JSON.stringify(summary, null, 2));
+    else {
+      console.log(`${reset.committed ? "reset" : "would reset"} ${reset.path} (${reset.operationCount} operations, v${reset.version})`);
+      if (reset.backupPath) console.log(`${reset.committed ? "backup" : "planned backup"}: ${reset.backupPath}`);
+      if (!options.yes && reset.operationCount > 0) console.log("Run again with --yes to commit this reset.");
+      report(reset.result);
+    }
+    setExit(reset.result);
+  });
+
+program.command("restore <source> <backup>")
+  .option("--dry-run", "preview restoration (the default)")
+  .option("--yes", "perform the restore after previewing it")
+  .option("--json")
+  .action(async (source: string, backup: string, options: { yes?: boolean; json?: boolean }) => {
+    const restored = await restoreLayout(source, backup, options.yes === undefined ? {} : { confirm: options.yes });
+    if (options.json) console.log(JSON.stringify({ committed: restored.committed, path: restored.path, backupPath: backup, ...structuredResult(restored.result) }, null, 2));
+    else {
+      console.log(`${restored.committed ? "restored" : "would restore"} ${backup} → ${restored.path}`);
+      if (!options.yes) console.log("Run again with --yes to commit this restore.");
+      report(restored.result);
+    }
+    setExit(restored.result);
+  });
+
+program.command("migrate <source>")
+  .option("--dry-run", "preview migration (the default)")
+  .option("--yes", "write the v3 log; otherwise dry-run")
+  .option("--json")
+  .action((source: string, options: { yes?: boolean; json?: boolean }) => {
+    const snapshot = readLogSnapshot(source);
+    const ops = snapshot.log.ops.map((op) => op.op === "distribute_nodes" && op.order === undefined ? { ...op, order: "current" as const } : op);
+    const migrated = makeLog(ops, 3);
+    if (options.yes) writeOpLog(source, migrated, snapshot.raw);
+    const summary = { committed: options.yes ?? false, fromVersion: snapshot.log.version, toVersion: 3, path: source.replace(/\.mmd$/, ".layout.json"), log: migrated };
+    if (options.json) console.log(JSON.stringify(summary, null, 2));
+    else console.log(`${options.yes ? "migrated" : "would migrate"} ${summary.path} from v${summary.fromVersion} to v3`);
 });
 
 program.command("doctor").option("--json").action(async (options: { json?: boolean }) => {
@@ -223,8 +310,8 @@ async function mutate(source: string, ops: Op[], json = false): Promise<void> {
 function report(result: RenderResult): void {
   for (const warning of result.warnings) console.error(`warning: ${warning}`);
   for (const item of result.problems) console.error(`${item.severity}: ${item.message}`);
-  if (result.status === "clean") console.error("layout is visually clean");
-  else console.error(`layout status: ${result.status}`);
+  console.error(result.check.claim);
+  if (result.status !== "clean") console.error(`layout status: ${result.status}`);
 }
 
 function setExit(result: RenderResult): void {
@@ -251,4 +338,8 @@ function nonnegative(value: string): number {
 
 function compact<T extends object>(value: T): T {
   return Object.fromEntries(Object.entries(value).filter(([, candidate]) => candidate !== undefined && candidate !== false)) as T;
+}
+
+function collect(value: string, previous: string[]): string[] {
+  return [...previous, value];
 }

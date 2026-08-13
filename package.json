@@ -1,8 +1,9 @@
 {
   "name": "straightedge",
-  "version": "0.2.0",
+  "version": "0.2.0-alpha.1",
   "description": "Tell your agent how the diagram should look. Layout control for Mermaid.",
   "license": "Apache-2.0",
+  "author": "Greg Jennings",
   "type": "module",
   "bin": {
     "straightedge": "./dist/cli.js"
@@ -10,36 +11,58 @@
   "exports": {
     ".": "./dist/index.js"
   },
+  "types": "./dist/index.d.ts",
   "files": [
     "dist",
     "SPEC.md"
   ],
+  "repository": {
+    "type": "git",
+    "url": "git+https://github.com/gmjen/straightedge.git"
+  },
+  "homepage": "https://github.com/gmjen/straightedge#readme",
+  "bugs": {
+    "url": "https://github.com/gmjen/straightedge/issues"
+  },
+  "keywords": [
+    "mermaid",
+    "diagram",
+    "layout",
+    "mcp",
+    "model-context-protocol",
+    "flowchart"
+  ],
   "engines": {
-    "node": ">=22"
+    "node": ">=22.12.0"
   },
   "scripts": {
     "build": "tsc",
     "test": "tsx --test test/*.test.ts",
     "test:coverage": "node --import tsx --test --experimental-test-coverage test/*.test.ts",
     "test:e2e": "npm run build && node --test test/e2e/*.test.mjs",
-    "test:all": "npm run check && npm test && npm run test:e2e",
-    "check": "tsc --noEmit"
+    "test:docs": "node scripts/verify-docs.mjs",
+    "test:package": "node scripts/package-smoke.mjs",
+    "test:all": "npm run check && npm test && npm run test:e2e && npm run test:docs && npm run test:package",
+    "docs:assets": "npm run build && node scripts/generate-readme-assets.mjs",
+    "check": "tsc --noEmit",
+    "prepack": "npm run build",
+    "prepublishOnly": "npm run check && npm test && npm run test:e2e"
   },
   "dependencies": {
     "@modelcontextprotocol/sdk": "^1.0.0",
+    "@types/node": "^22.20.1",
     "commander": "^12.0.0",
     "elkjs": "0.9.3",
-    "mermaid": "11.4.1",
-    "puppeteer": "^23.0.0",
+    "mermaid": "11.16.1",
+    "puppeteer": "25.6.0",
     "zod": "^3.23.0"
   },
   "devDependencies": {
-    "@types/node": "^22.0.0",
     "tsx": "^4.19.0",
     "typescript": "^5.6.0"
   },
   "comments": {
-    "pinned": "mermaid and elkjs are pinned exactly on purpose. The layout-loader API is public but young and LayoutData is semi-internal; treat an upgrade as a deliberate task, not a dependabot merge.",
-    "deps": "Six runtime dependencies. If this list grows, ask why."
+    "pinned": "mermaid, elkjs, and puppeteer are pinned exactly on purpose. The layout-loader API is public but young, LayoutData is semi-internal, and Chromium changes can affect visual baselines; treat an upgrade as a deliberate task, not a dependabot merge.",
+    "deps": "Seven package dependencies, including Node declarations required by the public .d.ts surface. If this list grows, ask why."
   }
 }

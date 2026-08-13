@@ -1,0 +1,35 @@
+name: Bug report
+description: Report a reproducible Straightedge defect
+title: "[Bug]: "
+labels: [bug]
+body:
+  - type: markdown
+    attributes:
+      value: Do not include private diagrams or security vulnerabilities. See SECURITY.md for private reporting.
+  - type: input
+    id: version
+    attributes:
+      label: Straightedge version
+      placeholder: 0.2.0-alpha.1
+    validations:
+      required: true
+  - type: textarea
+    id: steps
+    attributes:
+      label: Reproduction
+      description: Include a minimal sanitized Mermaid source, command, and output.
+    validations:
+      required: true
+  - type: textarea
+    id: expected
+    attributes:
+      label: Expected behavior
+    validations:
+      required: true
+  - type: input
+    id: environment
+    attributes:
+      label: Environment
+      placeholder: Node version, operating system, browser from straightedge doctor
+    validations:
+      required: true

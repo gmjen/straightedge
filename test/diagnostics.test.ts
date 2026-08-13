@@ -1,7 +1,7 @@
 import assert from "node:assert/strict";
 import { test } from "node:test";
 
-import { visualProblems } from "../src/diagnostics.js";
+import { checkSummary, presentationProblems, visualProblems } from "../src/diagnostics.js";
 import type { FrameStatus, Layout, VisualMeasurements } from "../src/types.js";
 
 const layout: Layout = {
@@ -65,4 +65,32 @@ test("an unsatisfied frame produces a publication-blocking minimum-font problem"
   }, 12);
   assert.equal(problems[0]?.kind, "minimum_font_size");
   assert.equal(problems[0]?.subjects.frame, true);
+});
+
+test("check summaries make a bounded success claim and name blocking results honestly", () => {
+  assert.equal(checkSummary("geometry", []).claim, "No blocking problems were detected by the active checks.");
+  const errors = visualProblems(layout, { nodes: [{
+    id: "box",
+    shape: "rect",
+    shapeBounds: { x: 0, y: 0, width: 60, height: 30 },
+    labelBounds: { x: -5, y: 5, width: 70, height: 20 },
+  }], edgeLabels: [] }, frame, 12);
+  assert.equal(checkSummary("geometry", errors).claim, "Blocking problems were detected by the active checks.");
+  assert.equal(checkSummary("presentation", [], false).completed, false);
+});
+
+test("presentation advisories carry evidence and direction checks are scoped to edited pairs", () => {
+  const directed: Layout = {
+    nodes: {
+      a: { id: "a", label: "a", x: 100, y: 0, width: 20, height: 20, shape: "rect" },
+      b: { id: "b", label: "b", x: 0, y: 0, width: 20, height: 20, shape: "rect" },
+    },
+    edges: [{ id: "a-b", source: "a", target: "b", points: [{ x: 100, y: 10 }, { x: 0, y: 10 }] }],
+  };
+  const canvas = { width: 140, height: 60 };
+  assert.equal(presentationProblems(directed, canvas, canvas, "LR", new Set()).some((item) => item.kind === "direction_contradiction"), false);
+  const problems = presentationProblems(directed, canvas, canvas, "LR", new Set(["b"]));
+  const direction = problems.find((item) => item.kind === "direction_contradiction");
+  assert.equal(direction?.severity, "warning");
+  assert.equal(direction?.evidence?.direction, "LR");
 });

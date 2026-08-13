@@ -1,0 +1,31 @@
+name: Diagram-quality fixture
+description: Share a sanitized diagram and visual instruction that Straightedge should handle better
+title: "[Fixture]: "
+labels: [diagram-fixture]
+body:
+  - type: textarea
+    id: source
+    attributes:
+      label: Sanitized Mermaid source
+      render: mermaid
+    validations:
+      required: true
+  - type: input
+    id: instruction
+    attributes:
+      label: Visual instruction
+      placeholder: Align box a and box b; add more space between charlie and foxtrot
+    validations:
+      required: true
+  - type: textarea
+    id: actual
+    attributes:
+      label: Actual result
+    validations:
+      required: true
+  - type: textarea
+    id: desired
+    attributes:
+      label: Desired result
+    validations:
+      required: true

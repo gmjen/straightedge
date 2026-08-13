@@ -2,12 +2,14 @@
 
 import { existsSync } from "node:fs";
 import { fileURLToPath } from "node:url";
-import puppeteer, { type Browser } from "puppeteer";
+import puppeteer, { type Browser, type LaunchOptions } from "puppeteer";
 import type { LayoutData } from "./baseline.js";
 import type { Canvas } from "./canvas.js";
 import type { Layout, NodeStyle, VisualMeasurements } from "./types.js";
 
-const MERMAID_SCRIPT = fileURLToPath(new URL("../node_modules/mermaid/dist/mermaid.min.js", import.meta.url));
+// Resolve through Node's package resolver so both a source checkout and a
+// consumer install with hoisted dependencies find Mermaid correctly.
+const MERMAID_SCRIPT = fileURLToPath(import.meta.resolve("mermaid/dist/mermaid.min.js"));
 const MAC_BROWSERS = [
   "/Applications/Google Chrome.app/Contents/MacOS/Google Chrome",
   "/Applications/Chromium.app/Contents/MacOS/Chromium",
@@ -37,12 +39,21 @@ export async function withBrowserSession<T>(run: (browser: Browser) => Promise<T
 }
 
 export async function openBrowser(): Promise<Browser> {
-  const executablePath = browserExecutable();
   try {
-    return await puppeteer.launch({ headless: true, ...(executablePath ? { executablePath } : {}) });
+    return await puppeteer.launch(browserLaunchOptions());
   } catch (error) {
     throw new Error(browserError(error));
   }
+}
+
+export function browserLaunchOptions(): LaunchOptions {
+  const executablePath = browserExecutable();
+  const disableSandbox = process.env.STRAIGHTEDGE_CHROMIUM_NO_SANDBOX === "1";
+  return {
+    headless: true,
+    ...(executablePath ? { executablePath } : {}),
+    ...(disableSandbox ? { args: ["--no-sandbox", "--disable-setuid-sandbox"] } : {}),
+  };
 }
 
 export async function parseMermaid(source: string, browser?: Browser): Promise<LayoutData> {
@@ -85,7 +96,7 @@ export async function parseMermaid(source: string, browser?: Browser): Promise<L
         }]);
         mermaid.initialize({
           startOnLoad: false,
-          securityLevel: "loose",
+          securityLevel: "strict",
           suppressErrorRendering: true,
           deterministicIds: true,
           deterministicIDSeed: "straightedge",
@@ -214,7 +225,7 @@ export async function paint(
           }]);
           mermaid.initialize({
             startOnLoad: false,
-            securityLevel: "loose",
+            securityLevel: "strict",
             suppressErrorRendering: true,
             deterministicIds: true,
             deterministicIDSeed: "straightedge",

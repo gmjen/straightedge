@@ -1,8 +1,11 @@
 import { renderWithOps, type RenderResult } from "./render.js";
 import { withBrowserSession } from "./paint.js";
 import type { Browser } from "puppeteer";
-import { makeLog, readLogSnapshot, writeOpLog } from "./store.js";
-import type { Op, Problem } from "./types.js";
+import { existsSync, mkdirSync, readFileSync, renameSync } from "node:fs";
+import { basename, dirname, join } from "node:path";
+import { randomUUID } from "node:crypto";
+import { logPathFor, makeLog, readLogSnapshot, writeOpLog } from "./store.js";
+import type { Op, OpLog, Problem } from "./types.js";
 
 export interface TransactionOptions {
   /** Warnings are reviewable and commit by default; errors never commit. */
@@ -26,13 +29,18 @@ export async function applyTransaction(
   const snapshot = readLogSnapshot(sourcePath);
   const ops: Op[] = [...snapshot.log.ops, ...requested];
   const result = await renderWithOps(sourcePath, ops, options.browser);
-  const acceptable = result.status === "clean" || (result.status === "review" && (options.commitOnReview ?? true));
+  const requestedTrace = result.trace.slice(snapshot.log.ops.length);
+  const invalidRequest = requestedTrace.find((entry) => entry.state === "skipped");
+  const acceptableStatus = result.status === "clean" || (result.status === "review" && (options.commitOnReview ?? true));
+  const acceptable = acceptableStatus && invalidRequest === undefined;
   if (!acceptable) {
     return {
       committed: false,
       appliedOps: [],
       result,
-      reason: "candidate has publication-blocking diagnostics; operation log was not changed",
+      reason: invalidRequest
+        ? `candidate operation ${invalidRequest.index} was skipped (${invalidRequest.notes.join("; ")}); operation log was not changed`
+        : "candidate has publication-blocking diagnostics; operation log was not changed",
     };
   }
   writeOpLog(sourcePath, makeLog(ops, snapshot.log.version), snapshot.raw);
@@ -45,6 +53,88 @@ export interface RepairResult {
   appliedOps: Op[];
   result: RenderResult;
   reason?: string;
+}
+
+export interface UndoResult {
+  committed: boolean;
+  removed?: Op;
+  path: string;
+  result: RenderResult;
+}
+
+export async function undoTransaction(sourcePath: string, browser?: Browser): Promise<UndoResult> {
+  const snapshot = readLogSnapshot(sourcePath);
+  const removed = snapshot.log.ops.at(-1);
+  const result = await renderWithOps(sourcePath, snapshot.log.ops.slice(0, -1), browser);
+  if (!removed) return { committed: false, path: logPathFor(sourcePath), result };
+  writeOpLog(sourcePath, makeLog(snapshot.log.ops.slice(0, -1), snapshot.log.version), snapshot.raw);
+  return { committed: true, removed, path: logPathFor(sourcePath), result };
+}
+
+export interface ResetResult {
+  committed: boolean;
+  path: string;
+  operationCount: number;
+  version: number;
+  backupPath?: string;
+  result: RenderResult;
+}
+
+export async function resetLayout(
+  sourcePath: string,
+  options: { confirm?: boolean; backup?: boolean; browser?: Browser } = {},
+): Promise<ResetResult> {
+  const snapshot = readLogSnapshot(sourcePath);
+  const result = await renderWithOps(sourcePath, [], options.browser);
+  const path = logPathFor(sourcePath);
+  const backupPath = snapshot.raw === null || options.backup === false ? undefined : nextBackupPath(sourcePath);
+  if (!options.confirm || snapshot.raw === null) {
+    return {
+      committed: false,
+      path,
+      operationCount: snapshot.log.ops.length,
+      version: snapshot.log.version,
+      ...(backupPath === undefined ? {} : { backupPath }),
+      result,
+    };
+  }
+  if (options.backup ?? true) {
+    if (!existsSync(path) || readFileSync(path, "utf8") !== snapshot.raw) {
+      throw new Error(`layout operation log changed during reset: ${path}`);
+    }
+    mkdirSync(dirname(backupPath!), { recursive: true });
+    renameSync(path, backupPath!);
+  } else {
+    // Atomic replacement with an empty log is safer than unlinking the active file.
+    writeOpLog(sourcePath, makeLog([], snapshot.log.version), snapshot.raw);
+  }
+  return {
+    committed: true,
+    path,
+    operationCount: snapshot.log.ops.length,
+    version: snapshot.log.version,
+    ...((options.backup ?? true) && backupPath !== undefined ? { backupPath } : {}),
+    result,
+  };
+}
+
+export async function restoreLayout(
+  sourcePath: string,
+  backupPath: string,
+  options: { confirm?: boolean; browser?: Browser } = {},
+): Promise<ResetResult> {
+  const backup = parseBackup(backupPath);
+  const result = await renderWithOps(sourcePath, [...backup.ops], options.browser);
+  const active = readLogSnapshot(sourcePath);
+  if (options.confirm) writeOpLog(sourcePath, backup, active.raw);
+  return {
+    committed: options.confirm ?? false,
+    path: logPathFor(sourcePath),
+    operationCount: backup.ops.length,
+    version: backup.version,
+    backupPath,
+    result,
+  };
 }
 
 export async function repair(sourcePath: string, maximumPasses = 3, browser?: Browser): Promise<RepairResult> {
@@ -117,4 +207,19 @@ function uniqueSafeSuggestions(problems: Problem[]): Op[] {
 
 function score(problems: Problem[]): number {
   return problems.reduce((total, problem) => total + (problem.severity === "error" ? 100 : 1), 0);
+}
+
+function nextBackupPath(sourcePath: string): string {
+  const diagram = basename(sourcePath, ".mmd");
+  const stamp = new Date().toISOString().replace(/[:.]/g, "-");
+  return join(dirname(sourcePath), ".straightedge", "backups", diagram, `${stamp}-${randomUUID().slice(0, 8)}.layout.json`);
+}
+
+function parseBackup(path: string): OpLog {
+  if (!existsSync(path)) throw new Error(`backup does not exist: ${path}`);
+  const parsed = JSON.parse(readFileSync(path, "utf8")) as { version?: unknown; ops?: unknown };
+  if ((parsed.version !== 1 && parsed.version !== 2 && parsed.version !== 3) || !Array.isArray(parsed.ops)) {
+    throw new Error(`${path} is not a valid Straightedge operation log`);
+  }
+  return parsed as OpLog;
 }
