@@ -39,7 +39,7 @@
     "build": "tsc",
     "test": "tsx --test test/*.test.ts",
     "test:coverage": "node --import tsx --test --experimental-test-coverage test/*.test.ts",
-    "test:e2e": "npm run build && node --test test/e2e/*.test.mjs",
+    "test:e2e": "npm run build && node --test --test-concurrency=2 test/e2e/*.test.mjs",
     "test:docs": "node scripts/verify-docs.mjs",
     "test:package": "node scripts/package-smoke.mjs",
     "test:all": "npm run check && npm test && npm run test:e2e && npm run test:docs && npm run test:package",

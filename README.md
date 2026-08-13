@@ -3,25 +3,83 @@
 **Tell your agent how the diagram should look.** Straightedge gives an AI agent deterministic,
 editable layout controls for Mermaid while keeping the Mermaid source ordinary and portable.
 
-| Mermaid baseline | After ordered layout, theme, and README frame |
+## Prompt → picture → persistent intent
+
+Start with ordinary Mermaid. There is no Straightedge metadata yet, so Mermaid chooses the default
+left-to-right layout.
+
+![Default Mermaid pipeline with four nodes in one left-to-right line](./docs/assets/pipeline-before.png)
+
+Tell the agent:
+
+> “Give the three processing stages equal-width boxes. Keep them in a row with 64 pixels between
+> them, then put Database 72 pixels below Model.”
+
+The source stays unchanged; the layout changes:
+
+![Pipeline after equal sizing, an ordered row, and relative database placement](./docs/assets/pipeline-layout.png)
+
+The new sidecar records semantic intent rather than generated coordinates:
+
+```diff
+- no pipeline.layout.json
++ {
++   "version": 3,
++   "ops": [
++     { "op": "equalize_size", "nodes": ["ingest", "enrich", "model"],
++       "dimension": "width", "value": 116 },
++     { "op": "resize_node", "node": "db", "width": 104, "height": 76 },
++     { "op": "row_nodes", "nodes": ["ingest", "enrich", "model"],
++       "gap": 64, "align": "center" },
++     { "op": "place_relative", "node": "db", "reference": "model",
++       "side": "below", "gap": 72 }
++   ]
++ }
+```
+
+Then tell the agent:
+
+> “Apply the executive-light theme and fit it to a wide README frame.”
+
+![The same pipeline after applying the executive-light theme and README-wide presentation frame](./docs/assets/pipeline-after.png)
+
+That prompt appends two operations; it does not flatten the earlier intent:
+
+```diff
+  "ops": [
+    ... layout operations above,
++   { "op": "apply_theme", "theme": "executive-light" },
++   { "op": "set_presentation",
++     "presentation": { "preset": "readme-wide", "minFontSize": 12 } }
+  ]
+```
+
+Shape-aware instructions use the same loop. For example:
+
+> “Make Review Gate about 10% smaller.”
+
+| Before resize | After shape-aware resize |
 |---|---|
-| ![Baseline Mermaid pipeline with four nodes in one default left-to-right line](./docs/assets/pipeline-before.png) | ![Straightedge pipeline with three ordered processing nodes, the database below Model, and a wide presentation frame](./docs/assets/pipeline-after.png) |
+| ![Draft, circular Review Gate, and Publish before resizing](./docs/assets/review-gate-before.png) | ![Draft, a ten-percent smaller circular Review Gate, and Publish after resizing](./docs/assets/review-gate-after.png) |
 
-The committed “after” example completed the `presentation` profile with no blocking problems. That
-is a scoped check result—not a claim that software can certify subjective design quality. Regenerate
-both images and the copied sidecar with `npm run docs:assets`; the exact source is
-[examples/pipeline.mmd](./examples/pipeline.mmd) and its operations are in
-[examples/pipeline.layout.json](./examples/pipeline.layout.json).
+The agent resolves “10% smaller” from inspected geometry and persists one deterministic operation.
+Both dimensions are equal, so the circle stays circular:
 
-> “Align box A and box B.”
->
-> “Add more space between Charlie and Foxtrot.”
->
-> “Put Ingest, Enrich, Model, and Database in that order.”
->
-> “Make circle Y about 10% smaller.”
+```diff
+  "ops": [
+    { "op": "set_presentation",
+      "presentation": { "width": 720, "height": 240, "padding": 24 } },
++   { "op": "resize_node", "node": "review_gate",
++     "width": 94.0921875, "height": 94.0921875 }
+  ]
+```
 
-Straightedge records those instructions next to the source:
+The smaller circle is valid but intentionally demonstrates honest diagnostics: the active checks
+flag its tighter label padding for review instead of claiming the result is aesthetically perfect.
+The pipeline presentation has no blocking problems. Regenerate every image and copied sidecar with
+`npm run docs:assets`; the exact inputs live in [examples](./examples/).
+
+Straightedge records visual instructions next to each source:
 
 ```text
 pipeline.mmd            Mermaid source; Straightedge reads it

@@ -2,6 +2,13 @@
   "version": 3,
   "ops": [
     {
+      "op": "equalize_size",
+      "nodes": ["ingest", "enrich", "model"],
+      "dimension": "width",
+      "value": 116
+    },
+    { "op": "resize_node", "node": "db", "width": 104, "height": 76 },
+    {
       "op": "row_nodes",
       "nodes": ["ingest", "enrich", "model"],
       "gap": 64,

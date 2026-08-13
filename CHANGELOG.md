@@ -5,7 +5,9 @@ the public compatibility stage.
 
 ## Unreleased
 
-- No unreleased changes yet.
+- Expanded the README with prompt-led default/layout/presentation and shape-resize comparisons,
+  including the exact persistent metadata changes behind each image.
+- Prevented wider themed fonts from clipping final glyphs inside Mermaid's pre-theme label box.
 
 ## 0.2.0-alpha.1 — 2026-08-12
 

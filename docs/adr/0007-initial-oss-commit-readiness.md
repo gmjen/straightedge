@@ -532,12 +532,18 @@ pack verification uses a temporary `npm_config_cache`; CI begins clean.
 
 ### 13.1 Visual proof
 
-The README starts with a committed before/after pair generated from a sanitized example:
+The README starts with a committed prompt-led sequence generated from sanitized examples. It shows
+the default render, semantic layout, styled presentation, and a shape-aware resize beside the exact
+metadata changes that produce each result:
 
 ```text
 docs/assets/pipeline-before.png
+docs/assets/pipeline-layout.png
 docs/assets/pipeline-after.png
 docs/assets/pipeline-after.layout.json
+docs/assets/review-gate-before.png
+docs/assets/review-gate-after.png
+docs/assets/review-gate-after.layout.json
 ```
 
 Requirements:
@@ -841,11 +847,11 @@ reviewable boundary.
 
 Local acceptance evidence on 2026-08-12:
 
-- `npm run test:all` covers type-checking, 34 unit/domain tests, 9 browser/CLI/MCP/editor E2E tests,
+- `npm run test:all` covers type-checking, 34 unit/domain tests, 10 browser/CLI/MCP/editor E2E tests,
   documentation verification, and an installed-tarball consumer smoke;
-- `npm run test:coverage` records a 66.56% line, 78.13% branch, and 70.33% function baseline across
+- `npm run test:coverage` records a 66.78% line, 78.13% branch, and 70.33% function baseline across
   the source modules without imposing an arbitrary release threshold;
-- isolated pack/install verification produces `straightedge-0.2.0-alpha.1.tgz` at 87,835
+- isolated pack/install verification produces `straightedge-0.2.0-alpha.1.tgz` at 88,527
   compressed bytes across 70 files, with executable CLI, declarations, README, and LICENSE;
 - the installed consumer runs version, doctor, render, check, ESM import, and TypeScript NodeNext
   declaration resolution without the source checkout or nested dependency layout;

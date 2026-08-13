@@ -205,6 +205,10 @@ export async function paint(
                   if (style.fontWeight !== undefined) labels.style("font-weight", style.fontWeight);
                   if (style.fontFamily !== undefined) labels.style("font-family", style.fontFamily);
                   if (style.fontSize !== undefined) labels.style("font-size", `${style.fontSize}px`);
+                  // Mermaid measures its foreignObject before Straightedge applies a theme.
+                  // A wider themed font must remain visible so diagnostics can measure the
+                  // actual label rather than silently clipping its final glyphs.
+                  element.selectAll(".label foreignObject").attr("overflow", "visible").style("overflow", "visible");
                 }
                 function fitShape(element: any, placed: any) {
                   const shape = element.select(".label-container");

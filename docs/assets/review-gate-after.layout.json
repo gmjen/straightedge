@@ -1,0 +1,15 @@
+{
+  "version": 2,
+  "ops": [
+    {
+      "op": "set_presentation",
+      "presentation": { "width": 720, "height": 240, "padding": 24 }
+    },
+    {
+      "op": "resize_node",
+      "node": "review_gate",
+      "width": 94.0921875,
+      "height": 94.0921875
+    }
+  ]
+}

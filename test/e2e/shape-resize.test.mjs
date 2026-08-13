@@ -54,6 +54,26 @@ test("browser paint fits rectangle and circle outlines while keeping labels unsc
   }
 });
 
+test("themed font metrics do not clip labels to Mermaid's pre-theme measurement", async () => {
+  const directory = mkdtempSync(join(tmpdir(), "straightedge-theme-label-e2e-"));
+  const sourcePath = join(directory, "labels.mmd");
+
+  try {
+    writeFileSync(sourcePath, "flowchart LR\n  model[Model] --> db[(Database)]\n");
+    writeLog(sourcePath, [{ op: "apply_theme", theme: "executive-light" }]);
+
+    const result = await render(sourcePath);
+    assert.match(result.svg, /<foreignObject[^>]*overflow="visible"[^>]*style="overflow: visible;"/);
+    for (const id of ["model", "db"]) {
+      const node = result.visual.nodes.find((candidate) => candidate.id === id);
+      assert.ok(node, `missing visual measurement for ${id}`);
+      assert.ok(node.labelBounds.width > 0, `${id} has a measurable themed label`);
+    }
+  } finally {
+    rmSync(directory, { recursive: true, force: true });
+  }
+});
+
 function shapeTag(svg, tag) {
   const match = svg.match(new RegExp(`<${tag}\\b[^>]*class="basic label-container"[^>]*>`));
   assert.ok(match, `rendered SVG contains a ${tag} label container`);
