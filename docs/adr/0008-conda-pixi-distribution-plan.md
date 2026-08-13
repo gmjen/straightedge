@@ -172,7 +172,7 @@ covered by Chrome terms and component notices. Therefore:
 - no browser-containing package may be uploaded until a maintainer records a redistribution review;
 - the review must identify the terms that permit the exact artifact to be mirrored inside a public
   Conda package and the notices that must accompany it;
-- the recipe must include those notices, not merely Straightedge's Apache-2.0 license; and
+- the recipe must include those notices, not merely Straightedge's BSD-3-Clause license; and
 - CI must fail when a browser version changes without corresponding URL, SHA-256, and notice updates.
 
 If that review does not approve redistribution, the team must return to this ADR. The fallback is a
@@ -318,7 +318,7 @@ about:
   description: |
     Straightedge is an agent-facing CLI and MCP server for deterministic,
     replayable visual edits to Mermaid flowcharts.
-  license: Apache-2.0 AND LicenseRef-Chrome-for-Testing
+  license: BSD-3-Clause AND LicenseRef-Chrome-for-Testing
   license_file:
     - source/LICENSE
     - npm-production-licenses.txt
@@ -613,4 +613,3 @@ be affirmatively cleared. Those costs are preferable to calling a thin wrapper a
 - [Chrome for Testing availability](https://github.com/GoogleChromeLabs/chrome-for-testing)
 - [Conda version ordering](https://docs.conda.io/projects/conda/en/latest/user-guide/concepts/pkg-specs.html#version-ordering)
 - [GitHub artifact attestations](https://docs.github.com/en/actions/how-tos/secure-your-work/use-artifact-attestations/use-artifact-attestations)
-

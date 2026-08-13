@@ -264,4 +264,4 @@ channel and [CONTRIBUTING.md](./CONTRIBUTING.md) for fixture and pull-request gu
 
 ## License
 
-Copyright 2026 Greg Jennings. Licensed under the [Apache License 2.0](./LICENSE).
+Licensed under the [BSD 3-Clause License](./LICENSE).

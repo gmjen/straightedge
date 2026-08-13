@@ -649,4 +649,4 @@ else — registration will work; edge participation is the actual bet.
 
 ---
 
-**License:** Apache-2.0
+**License:** BSD-3-Clause

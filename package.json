@@ -2,7 +2,7 @@
   "name": "straightedge",
   "version": "0.2.0-alpha.1",
   "description": "Tell your agent how the diagram should look. Layout control for Mermaid.",
-  "license": "Apache-2.0",
+  "license": "BSD-3-Clause",
   "author": "Greg Jennings",
   "type": "module",
   "bin": {
