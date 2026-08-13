@@ -98,7 +98,9 @@ intent as labels and structure evolve.
 subgraphs. Other Mermaid diagram families, org-chart routing, semantic tree layout, multi-user
 editing, and remote editor hosting are not supported yet. See [SPEC.md](./SPEC.md),
 [ADR-0001](./docs/adr/0001-trust-first-evolution.md), and the implemented initial-release plan in
-[ADR-0007](./docs/adr/0007-initial-oss-commit-readiness.md).
+[ADR-0007](./docs/adr/0007-initial-oss-commit-readiness.md). A future, complete Conda/Pixi
+distribution is designed in [ADR-0008](./docs/adr/0008-conda-pixi-distribution-plan.md); no Conda
+package or channel exists yet.
 
 Requirements:
 
